@@ -1,55 +1,59 @@
-import os # Add this import
+import os
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 import json
 
-# Construct an absolute path to marks.json
+# Construct an absolute path to marks.json relative to this file's location
+# This is important for Vercel's environment
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MARKS_FILE_PATH = os.path.join(BASE_DIR, "marks.json")
 
-# Load the marks data using the absolute path
+# Load the marks data
 try:
     with open(MARKS_FILE_PATH, "r") as f:
-        marks_data = json.load(f)
+        marks_data = json.load(f) # marks_data will be a list of dicts
 except FileNotFoundError:
-    # Log this error or handle it appropriately for debugging on Vercel
-    # For now, we'll raise it to make sure it appears in Vercel logs if it happens
-    raise RuntimeError(f"Could not find marks.json at {MARKS_FILE_PATH}")
+    # This error will be raised if marks.json is not found where expected
+    raise RuntimeError(f"Could not find marks.json at {MARKS_FILE_PATH}. Ensure it's in the same directory as main.py and deployed with your Vercel app.")
 except json.JSONDecodeError:
-    raise RuntimeError(f"Could not decode marks.json at {MARKS_FILE_PATH}")
+    raise RuntimeError(f"Could not decode marks.json at {MARKS_FILE_PATH}. Check if it's a valid JSON.")
 
 
 app = FastAPI()
 
-# Enable CORS
+# Enable CORS to allow GET requests from any origin
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["GET"],
-    allow_headers=["*"],
+    allow_origins=["*"],  # Allows all origins
+    allow_credentials=True,
+    allow_methods=["GET"], # Allows only GET requests
+    allow_headers=["*"],  # Allows all headers
 )
 
 @app.get("/api")
-async def get_marks(name: list[str] = Query(...)):
-    student_marks = []
-    # Ensure marks_data is loaded before trying to access it
-    # This check is more for robustness, the error should be caught above if file loading fails
-    if not isinstance(marks_data, list): # Or dict, depending on your actual JSON structure for lookup
-        # If marks_data is a list of dicts as per your example, you need to convert it to a dict for easy lookup
-        # Assuming marks_data in marks.json is a list like: [{"name": "A", "marks": 10}, ...]
-        # You'd ideally convert this to a dictionary for fast lookups: {"A": {"name": "A", "marks": 10}, ...}
-        # For now, I'll assume marks_data is already in a lookup-friendly format (e.g., a dictionary keyed by name)
-        # If it's a list of dictionaries, your original code needs adjustment for how 'n in marks_data' works.
-        # Let's assume marks_data is a dictionary: {name: {details}}
-        # Or if marks_data is a list of {"name": "X", "marks": Y}, then it should be:
-        # temp_marks_data = {item['name']: item for item in marks_data}
-        # Then use temp_marks_data for lookup
-        pass # Add proper handling or conversion if necessary
+async def get_marks(name: list[str] = Query(..., title="Student Names", description="A list of student names to fetch marks for.")):
+    """
+    Retrieves the marks for a list of specified student names.
+    The marks are returned in the same order as the input names.
+    If a student name is not found, their mark will not be included in the output list.
+    """
+    student_marks_values = []
+    if not isinstance(marks_data, list):
+        # This case should ideally not be hit if marks.json is loaded correctly as a list of dicts
+        # but it's a good safeguard or place for more specific error handling.
+        return {"error": "Marks data is not in the expected format (list of students)."}
 
-    for n_val in name: # Renamed 'n' to 'n_val' to avoid conflict if you process marks_data
-        # Your current marks.json is a list of dictionaries, so `n in marks_data` will not work as intended.
-        # You need to search through the list.
-        found_student = next((student for student in marks_data if student.get("name") == n_val), None)
+    for n_val in name:
+        found_student = None
+        for student_record in marks_data:
+            if student_record.get("name") == n_val:
+                found_student = student_record
+                break
+        
         if found_student:
-            student_marks.append(found_student) # Or just found_student['marks'] if you only want the marks value
-    return {"marks": student_marks}
+            student_marks_values.append(found_student['marks'])
+        # If a student is not found, their mark is simply not added to the list,
+        # which matches the behavior implied by the example {"marks": [10, 20]}
+        # where only found marks are returned.
+
+    return {"marks": student_marks_values}
