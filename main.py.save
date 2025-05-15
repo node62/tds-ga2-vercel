@@ -34,7 +34,6 @@ app.add_middleware(
 async def read_root():
     return {"message": "Welcome! Use the /api endpoint to fetch marks. e.g., /api?name=student_name"}
 
-
 @app.get("/api")
 async def get_marks(name: list[str] = Query(..., title="Student Names", description="A list of student names to fetch marks for.")):
     """
