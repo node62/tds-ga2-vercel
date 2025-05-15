@@ -1,64 +1,55 @@
-import os
+import json
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
-import json
+from typing import List, Optional
 
-# Construct an absolute path to marks.json relative to this file's location
-# This is important for Vercel's environment
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-MARKS_FILE_PATH = os.path.join(BASE_DIR, "marks.json")
-
-# Load the marks data
+# Load the marks data from the JSON file
+# This will be loaded once when the application starts
 try:
-    with open(MARKS_FILE_PATH, "r") as f:
-        marks_data = json.load(f) # marks_data will be a list of dicts
+    with open("marks.json", "r") as f:
+        students_data = json.load(f)
 except FileNotFoundError:
-    # This error will be raised if marks.json is not found where expected
-    raise RuntimeError(f"Could not find marks.json at {MARKS_FILE_PATH}. Ensure it's in the same directory as main.py and deployed with your Vercel app.")
+    students_data = [] # Handle case where file might not be found, though it should be deployed
 except json.JSONDecodeError:
-    raise RuntimeError(f"Could not decode marks.json at {MARKS_FILE_PATH}. Check if it's a valid JSON.")
+    students_data = [] # Handle case where JSON is invalid
 
+# Create a dictionary for faster lookups
+marks_dict = {student["name"]: student["marks"] for student in students_data}
 
 app = FastAPI()
 
-# Enable CORS to allow GET requests from any origin
+# Configure CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # Allows all origins
     allow_credentials=True,
-    allow_methods=["GET"], # Allows only GET requests
+    allow_methods=["GET"],  # Allows only GET requests
     allow_headers=["*"],  # Allows all headers
 )
 
-@app.get("/")
-async def read_root():
-    return {"message": "Welcome! Use the /api endpoint to fetch marks. e.g., /api?name=student_name"}
-
-
 @app.get("/api")
-async def get_marks(name: list[str] = Query(..., title="Student Names", description="A list of student names to fetch marks for.")):
+async def get_marks(names: List[str] = Query(None, alias="name")):
     """
-    Retrieves the marks for a list of specified student names.
-    The marks are returned in the same order as the input names.
-    If a student name is not found, their mark will not be included in the output list.
+    Retrieves the marks for the given list of student names.
+    Example: /api?name=X&name=Y
     """
-    student_marks_values = []
-    if not isinstance(marks_data, list):
-        # This case should ideally not be hit if marks.json is loaded correctly as a list of dicts
-        # but it's a good safeguard or place for more specific error handling.
-        return {"error": "Marks data is not in the expected format (list of students)."}
+    results = []
+    if names:
+        for name in names:
+            # Get marks from the pre-loaded dictionary
+            mark = marks_dict.get(name)
+            # The problem asks for marks of X and Y in the same order.
+            # If a name is not found, its mark is not added to the list,
+            # as per the example output { "marks": [10, 20] }
+            if mark is not None:
+                results.append(mark)
+            # If you need to explicitly return null or an indicator for not found:
+            # else:
+            # results.append(None) # Or some other placeholder
 
-    for n_val in name:
-        found_student = None
-        for student_record in marks_data:
-            if student_record.get("name") == n_val:
-                found_student = student_record
-                break
-        
-        if found_student:
-            student_marks_values.append(found_student['marks'])
-        # If a student is not found, their mark is simply not added to the list,
-        # which matches the behavior implied by the example {"marks": [10, 20]}
-        # where only found marks are returned.
+    return {"marks": results}
 
-    return {"marks": student_marks_values}
+# Optional: A root endpoint for basic testing
+@app.get("/")
+def read_root():
+    return {"message": "Welcome to the Marks API. Use /api?name=STUDENT_NAME to get marks."}
